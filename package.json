@@ -1,0 +1,13 @@
+{
+  "name": "clalang",
+  "version": "0.1.0",
+  "description": "clalang — a fast, compiled programming language optimized for LLM + human collaboration",
+  "main": "src/cli.js",
+  "bin": {
+    "clear": "src/cli.js"
+  },
+  "scripts": {
+    "build": "node src/cli.js build",
+    "run": "node src/cli.js run"
+  }
+}
