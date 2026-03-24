@@ -513,6 +513,7 @@ class Parser {
       this.eat(T.FAT_ARROW);
       let body;
       if (this.at(T.LBRACE)) body = this.parseBlock();
+      else if (this.at(T.RETURN)) body = this.parseReturnStmt();
       else body = this.parseExpression();
       arms.push({ pattern, body });
       this.skipSemis();

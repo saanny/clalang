@@ -47,7 +47,7 @@ class TypeChecker {
     if (['sqrt', 'abs', 'pow', 'sin', 'cos', 'floor', 'ceil', 'str_len',
          'str_concat', 'str_contains', 'channel', 'print', 'println',
          'filter', 'map', 'sum', 'len', 'push',
-         'Ok', 'Err', 'std'].includes(name)) {
+         'Ok', 'Err', 'std', 'str_eq'].includes(name)) {
       return { type: 'builtin', name };
     }
     return null;

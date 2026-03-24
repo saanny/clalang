@@ -63,6 +63,16 @@ class CodeGen {
     this.target = this.enumCtors;
     this.emitAllEnumCtors();
 
+    // Forward declarations for all functions (so spawn fns can call them)
+    const forwardDecls = [];
+    for (const node of this.ast.body) {
+      if (node.type === 'FnDecl' && node.name !== 'main') {
+        const retC = this.getCReturnType(node);
+        const params = node.params.map(p => this.mapType(p.typeAnnotation)).join(', ') || 'void';
+        forwardDecls.push(`${retC} ${node.name}(${params});`);
+      }
+    }
+
     // Functions
     for (const node of this.ast.body) {
       if (node.type === 'FnDecl') this.emitFnDecl(node);
@@ -74,6 +84,7 @@ class CodeGen {
       ...this.typeDecls,
       ...this.resultTypeDecls,
       ...this.enumCtors,
+      ...(forwardDecls.length ? [...forwardDecls, ''] : []),
       ...this.lambdas,
       ...this.spawnFns,
       ...this.funcDecls,
@@ -247,13 +258,21 @@ class CodeGen {
   genStmtImplicitReturn(node) {
     if (node.type === 'ExprStmt') {
       if (node.expr.type === 'MatchExpr') {
-        const val = this.genMatchExpr(node.expr);
-        this.emit(`return ${val};`);
+        // If all arms have explicit returns, generate as statement (returns already handled)
+        const allReturn = node.expr.arms.every(a =>
+          a.body.type === 'ReturnStmt' ||
+          (a.body.type === 'Block' && a.body.stmts.some(s => s.type === 'ReturnStmt'))
+        );
+        if (allReturn) {
+          this.genMatchStmt(node.expr);
+        } else {
+          const val = this.genMatchExpr(node.expr);
+          this.emit(`return ${val};`);
+        }
       } else {
         this.emit(`return ${this.genExpr(node.expr)};`);
       }
     } else if (node.type === 'IfExpr' && node.else) {
-      // TODO: if-else as expression
       this.genStmt(node);
     } else {
       this.genStmt(node);
@@ -731,9 +750,13 @@ class CodeGen {
   }
 
   genMatchArmBody(body, resultVar) {
+    // ReturnStmt in match arm — emit directly (returns from enclosing function)
+    if (body.type === 'ReturnStmt') {
+      this.genReturn(body);
+      return;
+    }
     if (body.type === 'Block') {
       if (resultVar) {
-        // Last expression in block is the value
         for (let i = 0; i < body.stmts.length - 1; i++) this.genStmt(body.stmts[i]);
         const last = body.stmts[body.stmts.length - 1];
         if (last.type === 'ExprStmt') {
@@ -748,7 +771,6 @@ class CodeGen {
       if (resultVar) {
         this.emit(`${resultVar} = ${this.genExpr(body)};`);
       } else {
-        // body is an expression used as a statement
         if (this.isStdPrint(body)) this.genStdPrint(body);
         else if (body.type === 'CallExpr') this.emit(`${this.genExpr(body)};`);
         else this.emit(`${this.genExpr(body)};`);
@@ -829,10 +851,17 @@ class CodeGen {
     const ctxName = `_spawn_ctx_${id}`;
     const fnName = `_spawn_fn_${id}`;
 
-    // Find captured variables
+    // Find locally defined variables in the spawn block
+    const localDefs = new Set();
+    this.walkAst(node.body, (n) => {
+      if (n.type === 'LetDecl') localDefs.add(n.name);
+    });
+
+    // Find captured variables (exclude local defs and functions)
     const captures = new Map();
     this.walkAst(node.body, (n) => {
-      if (n.type === 'Identifier' && this.env.has(n.name)) {
+      if (n.type === 'Identifier' && this.env.has(n.name) &&
+          !localDefs.has(n.name) && !this.functions.has(n.name)) {
         captures.set(n.name, this.env.get(n.name));
       }
     });

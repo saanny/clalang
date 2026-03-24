@@ -264,7 +264,7 @@ function insertSemicolons(tokens) {
         // Don't insert semi before | (enum variant separator)
         let next = i + 1;
         while (next < tokens.length && tokens[next].type === 'NEWLINE') next++;
-        if (next < tokens.length && tokens[next].type === T.PIPE) continue;
+        if (next < tokens.length && (tokens[next].type === T.PIPE || tokens[next].type === T.PIPE_GT)) continue;
         result.push(new Token(T.SEMI, ';', tok.line, tok.col));
       }
       continue;
