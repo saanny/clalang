@@ -208,7 +208,7 @@ static inline pthread_t clear_spawn(void* (*fn)(void*), void* ctx) {
 
 static inline const char* clear_fs_read(const char* path) {
   FILE* f = fopen(path, "rb");
-  if (!f) return NULL;
+  if (!f) return "";
   fseek(f, 0, SEEK_END);
   long len = ftell(f);
   fseek(f, 0, SEEK_SET);
@@ -223,6 +223,139 @@ static inline bool clear_fs_write(const char* path, const char* content) {
   FILE* f = fopen(path, "wb");
   if (!f) return false;
   fputs(content, f);
+  fclose(f);
+  return true;
+}
+
+// ── CLI Arguments ─────────────────────────────────────────
+
+static int _clear_argc = 0;
+static char** _clear_argv = NULL;
+
+static inline int32_t clear_args_count(void) { return _clear_argc; }
+
+static inline const char* clear_arg(int32_t n) {
+  if (n < 0 || n >= _clear_argc) return "";
+  return _clear_argv[n];
+}
+
+static inline const char* clear_args_join(int32_t from) {
+  if (from >= _clear_argc) return "";
+  size_t total = 0;
+  for (int i = from; i < _clear_argc; i++) total += strlen(_clear_argv[i]) + 1;
+  char* buf = (char*)malloc(total);
+  buf[0] = '\0';
+  for (int i = from; i < _clear_argc; i++) {
+    if (i > from) strcat(buf, " ");
+    strcat(buf, _clear_argv[i]);
+  }
+  return buf;
+}
+
+// ── Extra String Utilities ────────────────────────────────
+
+static inline bool clear_str_starts_with(const char* s, const char* prefix) {
+  return strncmp(s, prefix, strlen(prefix)) == 0;
+}
+
+static inline int32_t clear_str_to_int(const char* s) {
+  return (int32_t)atoi(s);
+}
+
+static inline int32_t clear_str_count_lines(const char* s) {
+  if (!s || !*s) return 0;
+  int32_t count = 0;
+  for (; *s; s++) if (*s == '\n') count++;
+  // Count last line if it doesn't end with \n
+  if (s[-1] != '\n') count++;
+  return count;
+}
+
+static inline const char* clear_str_get_line(const char* s, int32_t n) {
+  int32_t cur = 0;
+  const char* start = s;
+  while (*s) {
+    if (*s == '\n') {
+      if (cur == n) {
+        size_t len = s - start;
+        char* line = (char*)malloc(len + 1);
+        memcpy(line, start, len);
+        line[len] = '\0';
+        return line;
+      }
+      cur++;
+      start = s + 1;
+    }
+    s++;
+  }
+  if (cur == n && *start) {
+    return strdup(start);
+  }
+  return "";
+}
+
+static inline const char* clear_str_set_line(const char* s, int32_t n, const char* newline) {
+  size_t slen = strlen(s);
+  size_t nlen = strlen(newline);
+  char* result = (char*)malloc(slen + nlen + 2);
+  char* dst = result;
+  const char* src = s;
+  int32_t cur = 0;
+  while (*src) {
+    if (cur == n) {
+      memcpy(dst, newline, nlen); dst += nlen;
+      *dst++ = '\n';
+      while (*src && *src != '\n') src++;
+      if (*src == '\n') src++;
+      cur++;
+    } else {
+      while (*src && *src != '\n') *dst++ = *src++;
+      if (*src == '\n') { *dst++ = *src++; }
+      cur++;
+    }
+  }
+  *dst = '\0';
+  return result;
+}
+
+static inline const char* clear_str_delete_line(const char* s, int32_t n) {
+  size_t slen = strlen(s);
+  char* result = (char*)malloc(slen + 1);
+  char* dst = result;
+  const char* src = s;
+  int32_t cur = 0;
+  while (*src) {
+    if (cur == n) {
+      while (*src && *src != '\n') src++;
+      if (*src == '\n') src++;
+      cur++;
+    } else {
+      while (*src && *src != '\n') *dst++ = *src++;
+      if (*src == '\n') { *dst++ = *src++; }
+      cur++;
+    }
+  }
+  *dst = '\0';
+  return result;
+}
+
+static inline const char* clear_str_replace(const char* s, const char* old, const char* neww) {
+  const char* pos = strstr(s, old);
+  if (!pos) return strdup(s);
+  size_t before = pos - s;
+  size_t olen = strlen(old);
+  size_t nlen = strlen(neww);
+  size_t slen = strlen(s);
+  char* result = (char*)malloc(slen - olen + nlen + 1);
+  memcpy(result, s, before);
+  memcpy(result + before, neww, nlen);
+  strcpy(result + before + nlen, pos + olen);
+  return result;
+}
+
+static inline bool clear_fs_exists(const char* path) {
+  FILE* f = fopen(path, "r");
+  if (!f) return false;
   fclose(f);
   return true;
 }

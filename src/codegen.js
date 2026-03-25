@@ -202,8 +202,9 @@ class CodeGen {
     this.currentFn = this.functions.get(node.name);
 
     const isMain = node.name === 'main';
+    this.currentFnName = node.name;
     const retC = isMain ? 'int' : this.getCReturnType(node);
-    const params = isMain ? 'void' : node.params.map(p => {
+    const params = isMain ? 'int _argc, char* _argv[]' : node.params.map(p => {
       this.env.set(p.name, p.typeAnnotation.name);
       return `${this.mapType(p.typeAnnotation)} ${p.name}`;
     }).join(', ') || 'void';
@@ -211,6 +212,7 @@ class CodeGen {
     this.target = this.funcDecls;
     this.emit(`${retC} ${node.name}(${params}) {`);
     this.indent++;
+    if (isMain) this.emit('_clear_argc = _argc; _clear_argv = _argv;');
     const hasReturnType = !isMain && (node.returnType || node.errorType);
     this.genBlock(node.body, !!hasReturnType);
     if (isMain) this.emit('return 0;');
@@ -220,6 +222,7 @@ class CodeGen {
 
     this.env = savedEnv;
     this.currentFn = null;
+    this.currentFnName = null;
   }
 
   emitTestDecl(node) {
@@ -305,7 +308,10 @@ class CodeGen {
   }
 
   genReturn(node) {
-    if (!node.value) { this.emit('return;'); return; }
+    if (!node.value) {
+      this.emit(this.currentFnName === 'main' ? 'return 0;' : 'return;');
+      return;
+    }
     this.emit(`return ${this.genExpr(node.value)};`);
   }
 
@@ -450,9 +456,12 @@ class CodeGen {
       return 'clear_channel_new()';
     }
 
-    // str_len, str_concat, str_contains, str_eq
-    if (callee.type === 'Identifier' && callee.name.startsWith('str_')) {
-      return `clear_${callee.name}(${node.args.map(a => this.genExpr(a)).join(', ')})`;
+    // str_*, fs_*, args_*, arg() — map to clear_* runtime functions
+    if (callee.type === 'Identifier') {
+      const n = callee.name;
+      if (n.startsWith('str_') || n.startsWith('fs_') || n.startsWith('args_') || n === 'arg') {
+        return `clear_${n}(${node.args.map(a => this.genExpr(a)).join(', ')})`;
+      }
     }
 
     // Array builtins used directly: filter(arr, fn), map(arr, fn), sum(arr), len(arr)
@@ -556,27 +565,29 @@ class CodeGen {
   isStdPrint(expr) {
     return expr.type === 'CallExpr' && expr.callee.type === 'MemberExpr' &&
       expr.callee.object.type === 'Identifier' && expr.callee.object.name === 'std' &&
-      (expr.callee.property === 'print' || expr.callee.property === 'println');
+      ['print', 'println', 'write'].includes(expr.callee.property);
   }
 
   genStdPrint(call) {
-    if (call.args.length === 0) { this.emit('printf("\\n");'); return; }
+    const noNl = call.callee.property === 'write';
+    const nl = noNl ? '' : '\\n';
+    if (call.args.length === 0) { this.emit(`printf("${nl}");`); return; }
     const arg = call.args[0];
 
     // String interpolation
     if (arg.type === 'StringInterp') {
       const interp = this.genStringInterp(arg);
       if (interp.args.length === 0) {
-        this.emit(`printf("${interp.fmt}\\n");`);
+        this.emit(`printf("${interp.fmt}${nl}");`);
       } else {
-        this.emit(`printf("${interp.fmt}\\n", ${interp.args.join(', ')});`);
+        this.emit(`printf("${interp.fmt}${nl}", ${interp.args.join(', ')});`);
       }
       return;
     }
 
     // Plain string literal
     if (arg.type === 'StringLiteral') {
-      this.emit(`printf("${this.escC(arg.value)}\\n");`);
+      this.emit(`printf("${this.escC(arg.value)}${nl}");`);
       return;
     }
 
@@ -584,8 +595,8 @@ class CodeGen {
     const t = this.inferType(arg);
     const f = FMT[t] || '%d';
     const v = this.genExpr(arg);
-    if (t === 'bool') this.emit(`printf("${f}\\n", ${v} ? "true" : "false");`);
-    else this.emit(`printf("${f}\\n", ${v});`);
+    if (t === 'bool') this.emit(`printf("${f}${nl}", ${v} ? "true" : "false");`);
+    else this.emit(`printf("${f}${nl}", ${v});`);
   }
 
   // ── Match ────────────────────────────────────────────────
@@ -944,8 +955,10 @@ class CodeGen {
           if (name === 'Ok' || name === 'Err') return this.currentFn?.returnType || 'i32';
           if (this.variantToEnum.has(name)) return this.variantToEnum.get(name).enum;
           if (MATH_BUILTINS.has(name)) return 'f64';
-          if (name === 'str_len' || name === 'len') return 'i32';
-          if (name === 'str_concat' || name === 'str_contains') return 'str';
+          if (name === 'str_len' || name === 'len' || name === 'str_count_lines' || name === 'str_to_int' || name === 'args_count') return 'i32';
+          if (name === 'str_concat' || name === 'str_contains' || name === 'str_get_line' || name === 'str_set_line' || name === 'str_delete_line' || name === 'str_replace' || name === 'str_substr') return 'str';
+          if (name === 'arg' || name === 'args_join' || name === 'fs_read') return 'str';
+          if (name === 'fs_exists' || name === 'fs_write' || name === 'str_starts_with' || name === 'str_eq') return 'bool';
           if (name === 'sum') return 'i32';
           const fn = this.functions.get(name);
           if (fn) return fn.returnType || 'void';

@@ -47,7 +47,10 @@ class TypeChecker {
     if (['sqrt', 'abs', 'pow', 'sin', 'cos', 'floor', 'ceil', 'str_len',
          'str_concat', 'str_contains', 'channel', 'print', 'println',
          'filter', 'map', 'sum', 'len', 'push',
-         'Ok', 'Err', 'std', 'str_eq'].includes(name)) {
+         'Ok', 'Err', 'std', 'str_eq', 'str_to_int', 'str_starts_with',
+         'str_count_lines', 'str_get_line', 'str_set_line', 'str_delete_line', 'str_replace', 'str_substr',
+         'fs_read', 'fs_write', 'fs_exists',
+         'arg', 'args_count', 'args_join'].includes(name)) {
       return { type: 'builtin', name };
     }
     return null;
